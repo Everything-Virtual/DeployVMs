@@ -78,8 +78,8 @@ CSV Field Definitions
 	pDNS - Primary DNS must be populated
 	sDNS - Secondary NIC must be populated
 	Notes - Description applied to the vCenter Notes field on VM
-    Domain - DNS Domain must be populated
-    OU - OU to create new computer accounts in
+    	Domain - DNS Domain must be populated
+	OU - OU to create new computer accounts, must be the distinguished name eg "OU=TestOU1,OU=Servers,DC=my-homelab,DC=local"
 CREDITS
 Handling New-VM Async - LucD - @LucD22
 http://www.lucd.info/2010/02/21/about-async-tasks-the-get-task-cmdlet-and-a-hash-table/
