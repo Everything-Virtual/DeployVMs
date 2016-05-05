@@ -1,44 +1,33 @@
-﻿<#
+<#
 .SYNOPSIS
 Deploy Multiple VMs to vCenter
-
 .DESCRIPTION
 VMs are deployed asynchronously based on a pre-configured csv file (DeployVM.csv)
 Designed to run from Powershell ISE
-
 .PARAMETER csvfile
 Path to DeployVM.csv file with new VM info
-
 .PARAMETER vCenter
 vCenter Server FQDN or IP
-
 .PARAMETER auto
 Will allow script to run with no review or confirmation
-
 .PARAMETER createcsv
 Generates a blank csv file - DeployVM.csv
-
 .EXAMPLE
 .\DeployVM.ps1
 Runs DeployVM
-
 .EXAMPLE
 .\DeployVM.ps1 -vcenter my.vcenter.address
 Runs DeployVM specifying vCenter address
-
 .EXAMPLE
 .\DeployVM.ps1 -csvfile "E:\Scripts\Deploy\DeployVM.csv" -vcenter my.vcenter.address -auto
 Runs DeployVM specifying path to csv file, vCenter address and no confirmation
-
 .EXAMPLE
 .\DeployVM.ps1 -createcsv
 Creates a new/blank DeployVM.csv file in same directory as script
-
 .NOTES
 Author: Shawn Masterson
 Created: May 2014
 Version: 1.2
-
 Author: JJ Vidanez
 Created: Nov 2014
 Version: 1.3
@@ -46,12 +35,15 @@ Add creation onthefly for customization Spec for linux systems
 Ability to create machines names and guest hostname using different names
 Added a value to find out the kind of disk because powercli bug for SDRS reported at https://communities.vmware.com/message/2442684#2442684
 Remove the dependency for an already created OScustomization Spec
-
 Author: JJ Vidanez
 Created: Jul 2015
 Version: 1.4
 Adding domain credential request for Windows systems
-
+Version: 1.5
+Adding AD Computer Account Creation in specified OU's for VM's at start of deployment - Yes even Linux as that was a requirement
+It's possible to restrict this to just Windows VM's by removing the comment at line #261
+Author Simon Davies - Everything-Virtual.com
+Created May 2016
 
 REQUIREMENTS
 PowerShell v3 or greater
@@ -87,7 +79,7 @@ CSV Field Definitions
 	sDNS - Secondary NIC must be populated
 	Notes - Description applied to the vCenter Notes field on VM
     Domain - DNS Domain must be populated
-
+    OU - OU to create new computer accounts in
 CREDITS
 Handling New-VM Async - LucD - @LucD22
 http://www.lucd.info/2010/02/21/about-async-tasks-the-get-task-cmdlet-and-a-hash-table/
@@ -95,9 +87,7 @@ http://blog.smasterson.com/2014/05/21/deploying-multiple-vms-via-powercli-update
 http://blogs.vmware.com/PowerCLI/2014/05/working-customization-specifications-powercli-part-1.html
 http://blogs.vmware.com/PowerCLI/2014/06/working-customization-specifications-powercli-part-2.html
 http://blogs.vmware.com/PowerCLI/2014/06/working-customization-specifications-powercli-part-3.html
-
 USE AT YOUR OWN RISK!
-
 .LINK
 http://blog.smasterson.com/2014/05/21/deploying-multiple-vms-via-powercli-updated-v1-2/
 http://www.vidanez.com/2014/11/02/crear-multiples-linux-vms-de-un-fichero-csv-usando-powercli-deploying-multiple-linux-vms-using-powercli/
@@ -125,7 +115,7 @@ param (
 # Static Variables
 
 $scriptName = "DeployVM"
-$scriptVer = "1.4"
+$scriptVer = "1.5"
 $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Definition -Parent
 $starttime = Get-Date -uformat "%m-%d-%Y %I:%M:%S"
 $logDir = $scriptDir + "\Logs\"
@@ -133,7 +123,7 @@ $logfile = $logDir + $scriptName + "_" + (Get-Date -uformat %m-%d-%Y_%I-%M-%S) +
 $deployedDir = $scriptDir + "\Deployed\"
 $deployedFile = $deployedDir + "DeployVM_" + (Get-Date -uformat %m-%d-%Y_%I-%M-%S) + "_" + $env:username  + ".csv"
 $exportpath = $scriptDir + "\DeployVM.csv"
-$headers = "" | Select-Object NameVM, Name, Boot, OSType, Template, Folder, ResourcePool, CPU, RAM, Disk2, Disk3, Disk4, SDRS, Datastore, DiskStorageFormat, NetType, Network, DHCP, IPAddress, SubnetMask, Gateway, pDNS, sDNS, Notes, Domain
+$headers = "" | Select-Object NameVM, Name, Boot, OSType, Template, Folder, ResourcePool, CPU, RAM, Disk2, Disk3, Disk4, SDRS, Datastore, DiskStorageFormat, NetType, Network, DHCP, IPAddress, SubnetMask, Gateway, pDNS, sDNS, Notes, Domain, OU
 $taskTab = @{}
 $credentials = @{}
 
@@ -141,7 +131,7 @@ $credentials = @{}
 # Load Snap-ins
 
 # Add VMware snap-in if required
-If ((Get-PSSnapin -Name VMware.VimAutomation.Core -ErrorAction SilentlyContinue) -eq $null) {add-pssnapin VMware.VimAutomation.Core}
+If ((Get-PSSnapin -Name VMware.VimAutomation.Core -ErrorAction SilentlyContinue) -eq $null) {add-pssnapin VMware.VimAutomation.Core} {add-pssnapin ActiveDirectory}
 
 #--------------------------------------------------------------------
 # Functions
@@ -204,7 +194,7 @@ If ((Get-PowerCLIVersion).Build -lt 1649237) {
 # Test to ensure csv file is available
 If ($csvfile -eq "" -or !(Test-Path $csvfile) -or !$csvfile.EndsWith("DeployVM.csv")) {
     Out-Log "Path to DeployVM.csv not specified...prompting`n" "Yellow"
-    $csvfile = Read-OpenFileDialog "Locate DeployVM.csv" "C:\" "DeployVM.csv|DeployVM.csv"
+    $csvfile = Read-OpenFileDialog "Locate DeployVM.csv" "C:\Temp\" "DeployVM.csv|DeployVM.csv"
 }
 
 If ($csvfile -eq "" -or !(Test-Path $csvfile) -or !$csvfile.EndsWith("DeployVM.csv")) {
@@ -226,7 +216,7 @@ Out-Log "New VMs to create: $totalVMs" "Yellow"
 
 # Check to ensure csv is populated
 If ($totalVMs -lt 1) {
-    Out-Log "`nError: No enough entries found in DeployVM.csv Minimal 2" "Red"
+    Out-Log "`nError: No enough entries found in DeployVM.csv Minimal 1" "Red"
     Out-Log "Exiting...`n" "Red"
     Exit
 }
@@ -264,6 +254,18 @@ Foreach ($VM in $newVMs) {
         }
     }
  }
+
+# Reading VMs to pre-create AD accounts in specific OUs
+Foreach ($VM in $newVMs) {
+    $Error.Clear()
+    #If ($VM.OSType -eq "Windows") {
+        If ( !$VM.OU -eq "") {
+         New-ADComputer -Name $VM.Name -Path $Vm.OU
+        }
+    }
+   # }
+
+
 
 # Start provisioning VMs
 $v = 0
@@ -341,7 +343,7 @@ Foreach ($VM in $newVMs) {
 Out-Log "`n`nAll Deployment Tasks Created" "Yellow"
 Out-Log "`n`nMonitoring Task Processing" "Yellow"
 
-# When finsihed deploying, reconfigure new VMs
+# When finished deploying, reconfigure new VMs
 $totalTasks = $taskTab.Count
 $runningTasks = $totalTasks
 while($runningTasks -gt 0){
