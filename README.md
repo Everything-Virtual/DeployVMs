@@ -48,13 +48,23 @@ Ability to create machines names and guest hostname using different names
 Added a value to find out the kind of disk because powercli bug for SDRS reported at https://communities.vmware.com/message/2442684#2442684
 Remove the dependency for an already created OScustomization Spec
 
+Author: JJ Vidanez
+Created: Jul 2015
+Version: 1.4
+Adding domain credential request for Windows systems
+
+Author Simon Davies - Everything-Virtual.com
+Created May 2016
+Version: 1.5
+Adding AD Computer Account Creation in specified OU's for all VM's at start of deployment (This includes Linux as it was a requirment but this can be limited to Windows by removing the comment from line #264
+
 REQUIREMENTS
 PowerShell v3 or greater
-vCenter (tested on 5.1/5.5)
+vCenter (tested on 5.1/5.5/6.0)
 PowerCLI 5.5 R2 or later
 
 CSV File - VM info with the following headers
-NameVM, Name, Boot, OSType, Template, CustSpec, Folder, ResourcePool, CPU, RAM, Disk2, Disk3, Disk4, SDRS, Datastore, DiskStorageFormat, NetType, Network, DHCP, IPAddress, SubnetMask, Gateway, pDNS, sDNS, Notes, Domain
+NameVM, Name, Boot, OSType, Template, CustSpec, Folder, ResourcePool, CPU, RAM, Disk2, Disk3, Disk4, SDRS, Datastore, DiskStorageFormat, NetType, Network, DHCP, IPAddress, SubnetMask, Gateway, pDNS, sDNS, Notes, Domain, OU
 
 Must be named DeployVM.csv
 
@@ -111,6 +121,8 @@ sDNS - Secondary NIC must be populated
 Notes - Description applied to the vCenter Notes field on VM
 
 Domain - DNS Domain must be populated
+
+OU - Must be in Distinguished Name formate - eg "OU=TestOU1,OU=Servers,DC=my-homelab,DC=local"
 
 	
 CREDITS
