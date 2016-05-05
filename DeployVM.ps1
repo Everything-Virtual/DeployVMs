@@ -39,11 +39,11 @@ Author: JJ Vidanez
 Created: Jul 2015
 Version: 1.4
 Adding domain credential request for Windows systems
+Author Simon Davies - Everything-Virtual.com
+Created May 2016
 Version: 1.5
 Adding AD Computer Account Creation in specified OU's for VM's at start of deployment - Yes even Linux as that was a requirement
 It's possible to restrict this to just Windows VM's by removing the comment at line #261
-Author Simon Davies - Everything-Virtual.com
-Created May 2016
 
 REQUIREMENTS
 PowerShell v3 or greater
