@@ -1,7 +1,7 @@
 DeployVMs
 =========
 
-Deploying multiple Linux VMs using PowerCli
+Deploying multiple Windows and/or Linux VMs using PowerCli
 
 .DESCRIPTION
 VMs are deployed asynchronously based on a pre-configured csv file (DeployVM.csv)
