@@ -44,41 +44,48 @@ Created May 2016
 Version: 1.5
 Adding AD Computer Account Creation in specified OU's for VM's at start of deployment - Yes even Linux as that was a requirement
 It's possible to restrict this to just Windows VM's by removing the comment at line #261
+Author: Todd Ouimet
+Created January 2018
+Version: 1.6
+Added error checking for ActiveDirectory Module.
+Added ability to create VM in subfolders based on folder Id
+Added ability to populate Custom Attribute CreatedOn and CreatedBy
 
 REQUIREMENTS
 PowerShell v3 or greater
-vCenter (tested on 5.1/5.5)
+vCenter (tested on 5.1/5.5/6.5)
 PowerCLI 5.5 R2 or later
 CSV File - VM info with the following headers
-    NameVM, Name, Boot, OSType, Template, CustSpec, Folder, ResourcePool, CPU, RAM, Disk2, Disk3, Disk4, SDRS, Datastore, DiskStorageFormat, NetType, Network, DHCP, IPAddress, SubnetMask, Gateway, pDNS, sDNS, Notes, Domain
+    NameVM, Name, Boot, OSType, Template, CustSpec, FolderId, ResourcePool, CPU, RAM, Disk2, Disk3, Disk4, SDRS, Datastore, DiskStorageFormat, NetType, Network, DHCP, IPAddress, SubnetMask, Gateway, pDNS, sDNS, Notes, Domain
     Must be named DeployVM.csv
     Can be created with -createcsv switch
 CSV Field Definitions
-    NameVM - Name of VM
+    NameVM - Name of VM in vCenter
 	Name - Name of guest OS VM
 	Boot - Determines whether or not to boot the VM - Must be 'true' or 'false'
 	OSType - Must be 'Windows' or 'Linux'
 	Template - Name of existing template to clone
-	Folder - Folder in which to place VM in vCenter (optional)
+	FolderId - FolderId in which to place VM in vCenter (optional)
 	ResourcePool - VM placement - can be a reasource pool, host or a cluster
 	CPU - Number of vCPU
-	RAM - Amount of RAM
+	RAM - Amount of RAM (GB)
 	Disk2 - Size of additional disk to add (GB)(optional)
 	Disk3 - Size of additional disk to add (GB)(optional)
 	Disk4 - Size of additional disk to add (GB)(optional)
     SDRS - Mark to use a SDRS or not - Must be 'true' or 'false'
+         - If false The Datastore value CANNOT be a Datastore Cluster!!!
 	Datastore - Datastore placement - Can be a datastore or datastore cluster
 	DiskStorageFormat - Disk storage format - Must be 'Thin', 'Thick' or 'EagerZeroedThick' - Only funcional when SDRS = true
 	NetType - vSwitch type - Must be 'vSS' or 'vDS'
 	Network - Network/Port Group to connect NIC
 	DHCP - Use DHCP - Must be 'true' or 'false'
 	IPAddress - IP Address for NIC
-	SubnetMask - Subnet Mask for NIC
+	SubnetMask - Subnet Mask for NIC (255.255.255.0)
 	Gateway - Gateway for NIC
 	pDNS - Primary DNS must be populated
 	sDNS - Secondary NIC must be populated
 	Notes - Description applied to the vCenter Notes field on VM
-    	Domain - DNS Domain must be populated
+    Domain - DNS Domain must be populated
 	OU - OU to create new computer accounts, must be the distinguished name eg "OU=TestOU1,OU=Servers,DC=my-homelab,DC=local"
 CREDITS
 Handling New-VM Async - LucD - @LucD22
@@ -115,7 +122,7 @@ param (
 # Static Variables
 
 $scriptName = "DeployVM"
-$scriptVer = "1.5"
+$scriptVer = "1.6"
 $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Definition -Parent
 $starttime = Get-Date -uformat "%m-%d-%Y %I:%M:%S"
 $logDir = $scriptDir + "\Logs\"
@@ -123,7 +130,7 @@ $logfile = $logDir + $scriptName + "_" + (Get-Date -uformat %m-%d-%Y_%I-%M-%S) +
 $deployedDir = $scriptDir + "\Deployed\"
 $deployedFile = $deployedDir + "DeployVM_" + (Get-Date -uformat %m-%d-%Y_%I-%M-%S) + "_" + $env:username  + ".csv"
 $exportpath = $scriptDir + "\DeployVM.csv"
-$headers = "" | Select-Object NameVM, Name, Boot, OSType, Template, Folder, ResourcePool, CPU, RAM, Disk2, Disk3, Disk4, SDRS, Datastore, DiskStorageFormat, NetType, Network, DHCP, IPAddress, SubnetMask, Gateway, pDNS, sDNS, Notes, Domain, OU
+$headers = "" | Select-Object NameVM, Name, Boot, OSType, Template, FolderId, ResourcePool, CPU, RAM, Disk2, Disk3, Disk4, SDRS, Datastore, DiskStorageFormat, NetType, Network, DHCP, IPAddress, SubnetMask, Gateway, pDNS, sDNS, Notes, Domain, OU
 $taskTab = @{}
 $credentials = @{}
 
@@ -131,7 +138,15 @@ $credentials = @{}
 # Load Snap-ins
 
 # Add VMware snap-in if required
-If ((Get-PSSnapin -Name VMware.VimAutomation.Core -ErrorAction SilentlyContinue) -eq $null) {add-pssnapin VMware.VimAutomation.Core} {add-pssnapin ActiveDirectory}
+If ((Get-PSSnapin -Name VMware.VimAutomation.Core -ErrorAction SilentlyContinue) -eq $null) {add-pssnapin VMware.VimAutomation.Core -ErrorAction SilentlyContinue} {add-pssnapin ActiveDirectory}
+    {Import-Module ActiveDirectory}
+
+$loaded = Get-Module -Name VMware* -ErrorAction SilentlyContinue | Where-Object {$_.Name -notmatch 'Common$|SDK$'} | Select-Object  Name
+Get-Module -Name VMware* -ListAvailable | Where-Object {$loaded -notcontains $_.Name} | ForEach-Object {Import-Module -Name $_.Name}
+
+$loadedSnap = Get-PSSnapin -Name VMware* -ErrorAction SilentlyContinue | Where-Object {$_.Name -notmatch 'Core$'} | Select-Object  Name
+Get-PSSnapin -Name VMware* -Registered -ErrorAction SilentlyContinue | Where-Object {$loadedSnap -notcontains $_.Name} | ForEach-Object {Add-PSSnapin -Name $_.Name -ErrorAction SilentlyContinue}
+
 
 #--------------------------------------------------------------------
 # Functions
@@ -210,7 +225,7 @@ Copy-Item $csvfile -Destination $deployedFile | Out-Null
 
 # Import VMs from csv
 $newVMs = Import-Csv $csvfile
-$newVMs = $newVMs | Where {$_.Name -ne ""}
+$newVMs = $newVMs | Where-Object {$_.Name -ne ""}
 [INT]$totalVMs = @($newVMs).count
 Out-Log "New VMs to create: $totalVMs" "Yellow"
 
@@ -228,6 +243,22 @@ If (!$auto) {
     If ($continue -notmatch "y") {
         Out-Log "Exiting..." "Red"
         Exit
+    }
+}
+
+# Check OU column in csvfile. If populated verify the
+# ActiveDirectory snapin is loaded.
+Foreach ($VM in $newVMs) {
+    $Error.Clear()
+    If ( !$VM.OU -eq "") {
+        if ( (Get-Module -Name ActiveDirectory -ErrorAction SilentlyContinue) -eq $null )
+        {
+            Out-Log "`nError: ActiveDirectory module not loaded." "Red"
+            Out-Log "Exiting...`n" "Red"
+            Exit
+        } else {
+            Break
+        }
     }
 }
 
@@ -316,11 +347,13 @@ Foreach ($VM in $newVMs) {
     Out-Log "Deploying $vmName"
     If ($VM.SDRS -match "true") {
         Out-Log "SDRS Cluster disk on $vmName - removing DiskStorageFormat parameter " "Yellow"
-        $taskTab[(New-VM -Name $VM.NameVM -ResourcePool $VM.ResourcePool -Location $VM.Folder -Datastore $VM.Datastore `
+        $VMFolder = Get-Folder -Id $VM.FolderId
+        $taskTab[(New-VM -Name $VM.NameVM -ResourcePool $VM.ResourcePool -Location $VMFolder -Datastore $VM.Datastore `
     -Notes $VM.Notes -Template $VM.Template -OSCustomizationSpec temp$vmName -RunAsync -EA SilentlyContinue).Id] = $VM.Name
       } Else {
-       Out-Log "NON SDRS Cluster disk on $vmName - using DiskStorageFormat parameter " "Yellow"
-        $taskTab[(New-VM -Name $VM.NameVM -ResourcePool $VM.ResourcePool -Location $VM.Folder -Datastore $VM.Datastore `
+        Out-Log "NON SDRS Cluster disk on $vmName - using DiskStorageFormat parameter " "Yellow"
+        $VMFolder = Get-Folder -Id $VM.FolderId
+        $taskTab[(New-VM -Name $VM.NameVM -ResourcePool $VM.ResourcePool -Location $VMFolder -Datastore $VM.Datastore `
         -DiskStorageFormat $VM.DiskStorageFormat -Notes $VM.Notes -Template $VM.Template -OSCustomizationSpec temp$vmName -RunAsync -EA SilentlyContinue).Id] = $VM.Name
     }
     # Remove temp OS Custumization spec
@@ -349,14 +382,14 @@ $runningTasks = $totalTasks
 while($runningTasks -gt 0){
     $vmStatus = "[{0} of {1}] {2}" -f $runningTasks, $totalTasks, "Tasks Remaining"
 	Write-Progress -Activity "Monitoring Task Processing" -Status $vmStatus -PercentComplete (100*($totalTasks-$runningTasks)/$totalTasks)
-	Get-Task | % {
+	Get-Task | ForEach-Object {
     if($taskTab.ContainsKey($_.Id) -and $_.State -eq "Success"){
       #Deployment completed
       $Error.Clear()
       $vmName = $taskTab[$_.Id]
       Out-Log "`n`nReconfiguring $vmName" "Yellow"
       $VM = Get-VM $vmName
-      $VMconfig = $newVMs | Where {$_.Name -eq $vmName}
+      $VMconfig = $newVMs | Where-Object {$_.Name -eq $vmName}
 
 	  # Set CPU and RAM
       Out-Log "Setting vCPU(s) and RAM on $vmName" "Yellow"
@@ -391,6 +424,18 @@ while($runningTasks -gt 0){
         $VM | New-HardDisk -CapacityGB $VMConfig.Disk4 -StorageFormat $VMConfig.DiskStorageFormat -Persistence persistent | Out-Null
       }
 
+      # Check if CreatedOn & CreatedBy CustomAttributes exist.
+      # If yes populate the CustomAttributes.
+      If (Get-CustomAttribute -TargetType VirtualMachine -Name CreatedOn) {
+        $CreatedOnDateTime = Get-Date -format u
+        Out-Log "Setting CreatedOn Attribute vlaue to $CreatedOnDateTime for $vmName" "Yellow"
+        Set-Annotation -Entity $VM -CustomAttribute "CreatedOn" -Value $CreatedOnDateTime -Confirm:$false | Out-Null
+      }
+      If (Get-CustomAttribute -TargetType VirtualMachine -Name CreatedBy) {
+        $UserName = (Get-ADUser $env:UserName).GivenName + " " + (Get-ADUser $env:UserName).Surname
+        Out-Log "Setting CreatedBy Attribute value to $UserName for $vmName" "Yellow"
+        Set-Annotation -Entity $VM -CustomAttribute "CreatedBy" -Value $UserName -Confirm:$false | Out-Null
+      }
 
 	  # Boot VM
 	  If ($VMconfig.Boot -match "true") {
