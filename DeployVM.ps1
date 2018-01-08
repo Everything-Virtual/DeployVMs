@@ -429,12 +429,12 @@ while($runningTasks -gt 0){
       If (Get-CustomAttribute -TargetType VirtualMachine -Name CreatedOn) {
         $CreatedOnDateTime = Get-Date -format u
         Out-Log "Setting CreatedOn Attribute vlaue to $CreatedOnDateTime for $vmName" "Yellow"
-        Set-Annotation -Entity $VM -CustomAttribute "CreatedOn" -Value $CreatedOnDateTime -Confirm:$false
+        Set-Annotation -Entity $VM -CustomAttribute "CreatedOn" -Value $CreatedOnDateTime -Confirm:$false | Out-Null
       }
       If (Get-CustomAttribute -TargetType VirtualMachine -Name CreatedBy) {
         $UserName = (Get-ADUser $env:UserName).GivenName + " " + (Get-ADUser $env:UserName).Surname
         Out-Log "Setting CreatedBy Attribute value to $UserName for $vmName" "Yellow"
-        Set-Annotation -Entity $VM -CustomAttribute "CreatedBy" -Value $UserName -Confirm:$false
+        Set-Annotation -Entity $VM -CustomAttribute "CreatedBy" -Value $UserName -Confirm:$false | Out-Null
       }
 
 	  # Boot VM
